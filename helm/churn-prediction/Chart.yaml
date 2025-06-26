@@ -1,0 +1,17 @@
+apiVersion: v2
+name: churn-prediction
+description: A Helm chart for Customer Churn Prediction MLOps Service
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - mlops
+  - machine-learning
+  - churn-prediction
+  - fastapi
+home: https://github.com/144853/customer-churn-mlops
+sources:
+  - https://github.com/144853/customer-churn-mlops
+maintainers:
+  - name: Ashoka Sangapallar
+    email: ashoka.sj@gmail.com

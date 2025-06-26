@@ -1,0 +1,189 @@
+# Default values for churn-prediction.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 3
+
+image:
+  repository: customer-churn-mlops
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: LoadBalancer
+  port: 8000
+  targetPort: 8000
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: churn-api.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Environment variables
+env:
+  - name: LOG_LEVEL
+    value: "INFO"
+  - name: MAX_LATENCY_MS
+    value: "300"
+  - name: MIN_ROC_AUC
+    value: "0.85"
+
+# ConfigMap for application configuration
+configMap:
+  data:
+    app_name: "Customer Churn Prediction API"
+    app_version: "0.1.0"
+    debug: "false"
+
+# Secrets (should be created separately)
+secrets:
+  database:
+    secretName: "churn-db-secret"
+    keys:
+      - DATABASE_URL
+  mlflow:
+    secretName: "mlflow-secret"
+    keys:
+      - MLFLOW_TRACKING_URI
+  aws:
+    secretName: "aws-secret"
+    keys:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - S3_BUCKET
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Persistent storage for models and logs
+persistence:
+  enabled: true
+  storageClass: "standard"
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  labels: {}
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+
+# Network policies
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 5000  # MLflow
+        - protocol: TCP
+          port: 443   # HTTPS
+        - protocol: TCP
+          port: 80    # HTTP
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Initialize job for database setup
+initJob:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "15"
+  restartPolicy: OnFailure
+  backoffLimit: 3
