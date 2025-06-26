@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "churn-prediction.fullname" . }}-config
+  labels:
+    {{- include "churn-prediction.labels" . | nindent 4 }}
+data:
+  app.yaml: |
+    {{- range $key, $value := .Values.configMap.data }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}

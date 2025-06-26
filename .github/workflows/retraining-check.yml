@@ -1,0 +1,203 @@
+name: Model Retraining Check
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Force retraining regardless of drift detection'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  PYTHON_VERSION: 3.9
+
+jobs:
+  drift-detection:
+    runs-on: ubuntu-latest
+    outputs:
+      should_retrain: ${{ steps.check.outputs.should_retrain }}
+      drift_reason: ${{ steps.check.outputs.drift_reason }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    
+    - name: Run drift detection
+      id: check
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        FORCE_RETRAIN: ${{ github.event.inputs.force_retrain }}
+      run: |
+        if [ "$FORCE_RETRAIN" = "true" ]; then
+          echo "should_retrain=true" >> $GITHUB_OUTPUT
+          echo "drift_reason=Force retrain requested" >> $GITHUB_OUTPUT
+          echo "Force retraining requested"
+        else
+          # Run retraining check script
+          python scripts/train_model.py --check-only
+          exit_code=$?
+          
+          if [ $exit_code -eq 1 ]; then
+            echo "should_retrain=true" >> $GITHUB_OUTPUT
+            echo "drift_reason=Drift detected" >> $GITHUB_OUTPUT
+            echo "Drift detected - retraining needed"
+          else
+            echo "should_retrain=false" >> $GITHUB_OUTPUT
+            echo "drift_reason=No drift detected" >> $GITHUB_OUTPUT
+            echo "No drift detected - no retraining needed"
+          fi
+        fi
+    
+    - name: Create drift detection report
+      run: |
+        echo "## Drift Detection Report" > drift_report.md
+        echo "**Date:** $(date)" >> drift_report.md
+        echo "**Should Retrain:** ${{ steps.check.outputs.should_retrain }}" >> drift_report.md
+        echo "**Reason:** ${{ steps.check.outputs.drift_reason }}" >> drift_report.md
+        cat drift_report.md
+    
+    - name: Upload drift report
+      uses: actions/upload-artifact@v3
+      with:
+        name: drift-detection-report
+        path: drift_report.md
+
+  retrain-model:
+    needs: drift-detection
+    runs-on: ubuntu-latest
+    if: needs.drift-detection.outputs.should_retrain == 'true'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    
+    - name: Run model retraining
+      env:
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      run: |
+        echo "Starting model retraining due to: ${{ needs.drift-detection.outputs.drift_reason }}"
+        python scripts/train_model.py --trigger=drift_detected
+    
+    - name: Notify on success
+      if: success()
+      run: |
+        echo "Model retraining completed successfully!"
+        echo "Reason: ${{ needs.drift-detection.outputs.drift_reason }}"
+    
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "Model retraining failed!"
+        echo "Please check the logs and investigate the issue."
+        exit 1
+
+  update-production:
+    needs: [drift-detection, retrain-model]
+    runs-on: ubuntu-latest
+    if: needs.retrain-model.result == 'success'
+    environment: production
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+    
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region us-west-2 --name production-cluster
+    
+    - name: Restart production pods
+      run: |
+        # Restart pods to load the new model
+        kubectl rollout restart deployment/churn-prediction -n mlops-production
+        kubectl rollout status deployment/churn-prediction -n mlops-production --timeout=300s
+        
+        echo "Production deployment updated with new model"
+    
+    - name: Verify new model
+      run: |
+        # Add verification steps here
+        echo "New model deployed and verified in production"
+
+  notify-completion:
+    needs: [drift-detection, retrain-model, update-production]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Create summary
+      run: |
+        echo "## Retraining Check Summary" > summary.md
+        echo "**Date:** $(date)" >> summary.md
+        echo "**Drift Detection:** ${{ needs.drift-detection.result }}" >> summary.md
+        echo "**Should Retrain:** ${{ needs.drift-detection.outputs.should_retrain }}" >> summary.md
+        echo "**Reason:** ${{ needs.drift-detection.outputs.drift_reason }}" >> summary.md
+        
+        if [ "${{ needs.drift-detection.outputs.should_retrain }}" = "true" ]; then
+          echo "**Retraining:** ${{ needs.retrain-model.result }}" >> summary.md
+          echo "**Production Update:** ${{ needs.update-production.result }}" >> summary.md
+        fi
+        
+        cat summary.md
+    
+    - name: Upload summary
+      uses: actions/upload-artifact@v3
+      with:
+        name: retraining-summary
+        path: summary.md
