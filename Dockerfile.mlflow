@@ -1,0 +1,22 @@
+FROM python:3.9-slim
+
+# Install MLflow and dependencies
+RUN pip install mlflow==2.5.0 psycopg2-binary boto3
+
+# Create MLflow user
+RUN useradd -m -u 1000 mlflow
+USER mlflow
+
+# Create directories
+RUN mkdir -p /home/mlflow/mlflow
+WORKDIR /home/mlflow/mlflow
+
+# Expose MLflow port
+EXPOSE 5000
+
+# Start MLflow server
+CMD ["mlflow", "server", \
+     "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}", \
+     "--default-artifact-root", "${MLFLOW_DEFAULT_ARTIFACT_ROOT}", \
+     "--host", "0.0.0.0", \
+     "--port", "5000"]
