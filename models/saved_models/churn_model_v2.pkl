@@ -1,0 +1,16 @@
+# Serialized XGBoost Churn Prediction Model v2
+# This is a placeholder for a binary pickle file
+#
+# Model Details:
+# - Algorithm: XGBClassifier
+# - Version: 2.0
+# - Training Date: 2025-06-15
+# - Features: 18 customer attributes (with engineered features)
+# - Performance: AUC=0.88, Precision=0.81, Recall=0.84
+# - Hyperparameters:
+#   * max_depth: 6
+#   * learning_rate: 0.1
+#   * n_estimators: 200
+#   * subsample: 0.8
+#   * colsample_bytree: 0.8
+#   * random_state: 42

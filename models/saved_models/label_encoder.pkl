@@ -1,0 +1,12 @@
+# Serialized Label Encoder
+# This is a placeholder for a binary pickle file
+#
+# Encoding Details:
+# - Type: LabelEncoder from sklearn.preprocessing
+# - Used for encoding categorical features
+# - Categorical features encoded:
+#   * gender: M=1, F=0, Other=2
+#   * contract_type: Month-to-month=0, One year=1, Two year=2
+#   * payment_method: Electronic check=0, Mailed check=1, Bank transfer=2, Credit card=3
+#   * internet_service: DSL=0, Fiber optic=1, No=2
+# - Mappings preserved for consistent encoding during inference

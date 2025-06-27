@@ -1,0 +1,10 @@
+# Serialized Feature Scaler (StandardScaler)
+# This is a placeholder for a binary pickle file
+#
+# Preprocessing Details:
+# - Type: StandardScaler from sklearn.preprocessing
+# - Fitted on training data features
+# - Used for normalizing numerical features before model prediction
+# - Features scaled: age, tenure_months, monthly_charges, total_charges, avg_monthly_usage_gb
+# - Mean and std values computed from training set
+# - Applied consistently across train/validation/test sets
